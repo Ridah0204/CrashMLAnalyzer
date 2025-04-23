@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lighting Conditions Analysis</title>
+    <!-- Import Chart.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.1/chart.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .chart-container {
+            height: 400px;
+            margin-bottom: 30px;
+        }
+        .legend {
+            margin-top: 20px;
+        }
+        .legend h3 {
+            margin-bottom: 10px;
+        }
+        .legend ul {
+            padding-left: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Lighting Conditions Analysis</h1>
+        <div class="chart-container">
+            <canvas id="lightingChart"></canvas>
+        </div>
+        <div class="legend">
+            <h3>Legend:</h3>
+            <ul id="legendList"></ul>
+        </div>
+    </div>
+
+    <script>
+        // Lighting conditions mapping
+        const lightingConditionMap = {
+            'lighting_a_1': 'Daylight',
+            'lighting_b_1': 'Dusk-Dawn',
+            'lighting_c_1': 'Dark-Street Lights',
+            'lighting_d_1': 'Dark-No Street Lights',
+            'lighting_e_1': 'Dark-Street Lights Not Functioning'
+        };
+
+        // Hard-coded data from our Node.js processing script
+        // You can replace this with loading from the JSON file
+        const chartData = {
+            labels: [
+                'Daylight',
+                'Dusk-Dawn',
+                'Dark-Street Lights',
+                'Dark-No Street Lights',
+                'Dark-Street Lights Not Functioning'
+            ],
+            values: [368, 16, 171, 4, 0]
+        };
+
+        // Function to create the chart
+        function createChart() {
+            const ctx = document.getElementById('lightingChart').getContext('2d');
+            
+            // Create the chart
+            const chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: chartData.labels,
+                    datasets: [{
+                        label: 'Number of Occurrences',
+                        data: chartData.values,
+                        backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                title: function(tooltipItems) {
+                                    return tooltipItems[0].label;
+                                },
+                                label: function(context) {
+                                    return `Count: ${context.raw}`;
+                                }
+                            }
+                        },
+                        legend: {
+                            display: true,
+                            position: 'top',
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Count'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Lighting Condition'
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Add data labels on top of the bars
+            chart.data.datasets[0].datalabels = {
+                anchor: 'end',
+                align: 'top',
+                formatter: (value) => value,
+                font: {
+                    weight: 'bold'
+                }
+            };
+            chart.update();
+        }
+
+        // Function to update the legend list
+        function updateLegend() {
+            const legendList = document.getElementById('legendList');
+            const conditions = Object.keys(lightingConditionMap);
+            
+            conditions.forEach((code, index) => {
+                const description = lightingConditionMap[code];
+                const count = chartData.values[index];
+                
+                const listItem = document.createElement('li');
+                listItem.textContent = `${code}: ${description} - ${count} occurrences`;
+                legendList.appendChild(listItem);
+            });
+        }
+
+        // Start when the page loads
+        window.onload = function() {
+            createChart();
+            updateLegend();
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+THANK YOU GOD!!! for Data Scrapers and my ability to surf and learn and all the inf0 that is sent my way cause idk where will I be lol!!
+
+> Data Collection I had research articles that were available and I followed the steps to the tea but did not pull through conversion to OCR 
+
+> Through Columbus code and  coffee i used jupyter pypdf to go through and collect the data manually by pasting the link of each document that was summer 2024
+
+> Now I can scrape data using a chrome extension that collects instantly i manipulate the data to include "" (agent zero)then and upload the links to my pypdf script then they are ready for pre-processing in their respective folders
+
+> One defective report format 
+ #"https://www.dmv.ca.gov/portal/file/waymo_070624_b-pdf/", # defective link
+
+> Now i do not need the links below that were manually extracted everything is seamless
+2024
+
+"https://www.dmv.ca.gov/portal/file/zoox_07202024a-pdf/",
+        "https://www.dmv.ca.gov/portal/file/zoox_07202024b-pdf/",
+        "https://www.dmv.ca.gov/portal/file/zoox_07202024-pdf/",
+        "https://www.dmv.ca.gov/portal/file/waymo_07192024-pdf/",
+        "https://www.dmv.ca.gov/portal/file/waymo_07182024-pdf/",
+        "https://www.dmv.ca.gov/portal/file/zoox_07162024-pdf/",
+        "https://www.dmv.ca.gov/portal/file/zoox_071124-pdf/",
+
+> DMV had changed the structure of their website so pypdf and pyPDF2 could not work even beutifulsops (agent zero, claude failed too) could not work too so i had to find another way
+
+> I had to manually download the files since  i did not know the structural development of this webpage - Script created called alternativeDataCollection.py then pre process using the script pre_process.py
+
+> the 2024 data did not work either so i had to create another which i used agent zero to scrape the downloaded files remaining from 2024
+
+> changes that occurred is the location which is not too important for this model
+
+> i give up on the other 2024 data
