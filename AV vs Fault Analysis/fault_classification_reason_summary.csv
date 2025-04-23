@@ -1,0 +1,7 @@
+Predicted_Fault,Classification_Reason,Count
+Fully at Fault,Fully at fault due to front impact while in motion,13
+Fully at Fault,Fully at fault based on accident circumstances,1
+Not at Fault,Not at fault because vehicle was rear-ended,30
+Not at Fault,Not at fault because vehicle was stationary,11
+Not at Fault,Not at fault based on accident circumstances,1
+Partially at Fault,Partially at fault due to shared responsibility,1
