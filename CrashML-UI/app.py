@@ -6,10 +6,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.feature_extraction.text import TfidfVectorizer
 import re
-import PyPDF2
+#import PyPDF2
 from io import BytesIO
 import plotly.express as px
 import plotly.graph_objects as go
+import pdfplumber
 
 # Configure page
 st.set_page_config(
@@ -54,10 +55,11 @@ def load_models():
 def extract_text_from_pdf(pdf_file):
     """Extract text from uploaded PDF file"""
     try:
-        pdf_reader = PyPDF2.PdfReader(BytesIO(pdf_file.read()))
         text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text()
+        with pdfplumber.open(BytesIO(pdf_file.read())) as pdf:
+            for page in pdf.pages:
+                text += page.extract_text() + "\n"
+        return text
         return text
     except Exception as e:
         st.error(f"Error extracting text from PDF: {str(e)}")
