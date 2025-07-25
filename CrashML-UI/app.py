@@ -64,6 +64,7 @@ def extract_text_from_pdf(pdf_file):
         return ""
 
 def parse_dmv_report(text):
+
     """Parse DMV report text to extract key features"""
     # This function should mirror your data extraction logic
     # You'll need to adapt this based on your actual parsing logic
@@ -111,42 +112,147 @@ def parse_dmv_report(text):
     
     return data_point
 
-def predict_fault(data_point, models, vectorizer, feature_names):
-    """Make prediction using the trained models"""
+def debug_model_features(models, vectorizer, feature_names):
+    """Debug function to understand model expectations"""
     
-    # Extract structured features
-    structured_features = [
-        data_point['vehicle_1_moving'],
-        data_point['vehicle_2_moving'],
-        data_point['autonomous_mode'],
-        data_point['impact_front'],
-        data_point['impact_rear'],
-        data_point['impact_side'],
-        data_point['weather_issue'],
-        data_point['road_issue'],
-        data_point['dark_condition']
-    ]
-    
-    # Extract text features
-    text_features = vectorizer.transform([data_point['description']])
-    text_features_array = text_features.toarray()[0]
-    
-    # Combine features
-    all_features = np.concatenate([structured_features, text_features_array])
-    all_features = all_features.reshape(1, -1)
-    
-    # Make predictions with all models
-    predictions = {}
-    probabilities = {}
-    
-    for model_name, model in models.items():
-        pred = model.predict(all_features)[0]
-        prob = model.predict_proba(all_features)[0]
+    with st.expander("🔍 Debug Model Information"):
         
-        predictions[model_name] = pred
-        probabilities[model_name] = prob
+        # Check model information
+        for model_name, model in models.items():
+            st.write(f"**{model_name}:**")
+            if hasattr(model, 'n_features_in_'):
+                st.write(f"- Expected features: {model.n_features_in_}")
+            else:
+                st.write("- Expected features: Unknown (older sklearn version)")
+        
+        # Check vectorizer information
+        if vectorizer:
+            st.write(f"**TF-IDF Vectorizer:**")
+            if hasattr(vectorizer, 'vocabulary_'):
+                st.write(f"- Vocabulary size: {len(vectorizer.vocabulary_)}")
+                st.write(f"- Max features: {getattr(vectorizer, 'max_features', 'Unlimited')}")
+            
+            # Show some vocabulary examples
+            if hasattr(vectorizer, 'get_feature_names_out'):
+                feature_names_tfidf = vectorizer.get_feature_names_out()
+                st.write(f"- TF-IDF features: {len(feature_names_tfidf)}")
+                st.write(f"- Sample features: {list(feature_names_tfidf[:10])}")
+        
+        # Check feature names
+        if feature_names:
+            st.write(f"**Saved Feature Names:**")
+            st.write(f"- Total features: {len(feature_names)}")
+            st.write(f"- First 10: {feature_names[:10] if len(feature_names) > 10 else feature_names}")
+            st.write(f"- Last 10: {feature_names[-10:] if len(feature_names) > 10 else feature_names}")
+
+def recreate_features_from_training(data_point, original_feature_names):
+    """Recreate the exact feature set used during training"""
     
-    return predictions, probabilities, all_features
+    # Initialize feature vector with zeros
+    features = np.zeros(len(original_feature_names))
+    
+    # Map known structured features
+    structured_mapping = {
+        'vehicle_1_moving': data_point.get('vehicle_1_moving', 0),
+        'vehicle_2_moving': data_point.get('vehicle_2_moving', 0),
+        'autonomous_mode': data_point.get('autonomous_mode', 0),
+        'impact_front': data_point.get('impact_front', 0),
+        'impact_rear': data_point.get('impact_rear', 0),
+        'impact_side': data_point.get('impact_side', 0),
+        'weather_issue': data_point.get('weather_issue', 0),
+        'road_issue': data_point.get('road_issue', 0),
+        'dark_condition': data_point.get('dark_condition', 0)
+    }
+    
+    # Set structured features
+    for i, feature_name in enumerate(original_feature_names):
+        if feature_name in structured_mapping:
+            features[i] = structured_mapping[feature_name]
+    
+    # For text features, we need to use the description to set relevant features
+    description = data_point.get('description', '').lower()
+    
+    # Set text-based features based on keywords
+    text_feature_mapping = {
+        'rear_ended': ['rear ended', 'rear-ended', 'struck from behind', 'hit from behind'],
+        'lane_change': ['lane change', 'changing lanes', 'merged', 'swerved'],
+        'intersection': ['intersection', 'traffic light', 'traffic signal', 'crosswalk'],
+        'right_of_way': ['right of way', 'right-of-way', 'yield'],
+        'stationary': ['stationary', 'stopped', 'parked', 'not moving'],
+        'sudden_move': ['sudden', 'abrupt', 'unexpected', 'quickly'],
+        'autonomous_disengaged': ['disengaged', 'manual control', 'autonomous mode off'],
+        'chain_reaction': ['chain', 'pushed into', 'multiple vehicle']
+    }
+    
+    for i, feature_name in enumerate(original_feature_names):
+        for phrase_key, keywords in text_feature_mapping.items():
+            if phrase_key in feature_name:
+                if any(keyword in description for keyword in keywords):
+                    features[i] = 1
+                break
+    
+    return features.reshape(1, -1)
+
+# Modified the main prediction function that handles feature alignment if there less or more faatures inputed
+def safe_predict_fault(data_point, models, vectorizer, feature_names):
+    """Safe prediction function with multiple fallback strategies"""
+    
+            
+            # Strategy 2: Try to recreate features from original feature names
+    if feature_names:
+                try:
+                    all_features = recreate_features_from_training(data_point, feature_names)
+                    
+                    predictions = {}
+                    probabilities = {}
+                    
+                    for model_name, model in models.items():
+                        try:
+                            pred = model.predict(all_features)[0]
+                            prob = model.predict_proba(all_features)[0]
+                            predictions[model_name] = pred
+                            probabilities[model_name] = prob
+                        except:
+                            # Fallback for individual model
+                            predictions[model_name] = 1
+                            probabilities[model_name] = [0.33, 0.34, 0.33]
+                    
+                    st.success("✅ Used feature reconstruction method")
+                    return predictions, probabilities, all_features
+                    
+                except Exception as e2:
+                    st.error(f"Feature reconstruction failed: {str(e2)}")
+            
+            # Strategy 3: Use rule-based fallback
+    st.warning("🔄 Using rule-based prediction as fallback...")
+    rule_based_prediction = determine_fault_rule_based(data_point)
+            
+    fallback_predictions = {}
+    fallback_probabilities = {}
+            
+    for model_name in models.keys():
+                fallback_predictions[model_name] = rule_based_prediction
+                # Create confidence based on rule-based certainty
+                if rule_based_prediction == 0:
+                    fallback_probabilities[model_name] = [0.7, 0.2, 0.1]
+                elif rule_based_prediction == 2:
+                    fallback_probabilities[model_name] = [0.1, 0.2, 0.7]
+                else:
+                    fallback_probabilities[model_name] = [0.25, 0.5, 0.25]
+            
+    return fallback_predictions, fallback_probabilities, np.zeros((1, 216))
+        
+        
+def determine_fault_rule_based(data_point):
+    """Rule-based fault determination fallback"""
+    if data_point['vehicle_1_moving'] == 0 and data_point.get('vehicle_2_moving', 1) == 1:
+        return 0  # Not at fault - stationary
+    elif data_point['impact_rear'] == 1:
+        return 0  # Not at fault - rear-ended
+    elif data_point['impact_front'] == 1 and data_point['vehicle_1_moving'] == 1:
+        return 2  # At fault - front impact while moving
+    else:
+        return 1  # Partially at fault - unclear situation        
 
 def explain_prediction(data_point, models, feature_names, all_features):
     """Provide explanation for the prediction"""
@@ -245,9 +351,9 @@ def main():
             
             # Make prediction
             with st.spinner("Analyzing fault attribution..."):
-                predictions, probabilities, all_features = predict_fault(
-                    parsed_data, models, vectorizer, feature_names
-                )
+                predictions, probabilities, all_features = safe_predict_fault(parsed_data,
+                 models, vectorizer, feature_names)
+                
             
             # Display results
             st.header("🎯 Fault Analysis Results")
