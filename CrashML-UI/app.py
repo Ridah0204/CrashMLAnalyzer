@@ -245,6 +245,14 @@ def main():
     )
     
     if uploaded_file is not None:
+            # Display file name as feedback
+        st.caption(f"Currently analyzing: `{uploaded_file.name}`")
+
+        # Check if this is a new file
+        if 'last_uploaded_file' not in st.session_state or st.session_state.last_uploaded_file != uploaded_file.name:
+            st.session_state.last_uploaded_file = uploaded_file.name
+            st.experimental_rerun()
+
         st.success("✅ File uploaded successfully!")
         
         # Extract text
