@@ -133,9 +133,22 @@ def predict_fault(data_point, models, vectorizer, feature_names):
     text_features = vectorizer.transform([data_point['description']])
     text_features_array = text_features.toarray()[0]
     
-    # Combine features
-    all_features = np.concatenate([structured_features, text_features_array])
-    all_features = all_features.reshape(1, -1)
+    # Pad TF-IDF vector if it's smaller than expected
+    expected_text_features = 216 - len(structured_features)  # = 207
+    actual_text_features = text_features_array.shape[0]
+
+    if actual_text_features < expected_text_features:
+        # Pad with zeros
+        padded_text_features = np.pad(text_features_array, (0, expected_text_features - actual_text_features))
+    elif actual_text_features > expected_text_features:
+    # Truncate if longer (shouldn't happen)
+        padded_text_features = text_features_array[:expected_text_features]
+    else:
+        padded_text_features = text_features_array
+
+    # Combine all features
+    all_features = np.concatenate([structured_features, padded_text_features]).reshape(1, -1)
+
     
     # Make predictions with all models
     predictions = {}
