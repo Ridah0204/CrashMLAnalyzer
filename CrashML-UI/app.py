@@ -6,11 +6,12 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.feature_extraction.text import TfidfVectorizer
 import re
-#import PyPDF2
+import PyPDF2
+from PyPDF2 import PdfReader
 from io import BytesIO
 import plotly.express as px
 import plotly.graph_objects as go
-import pdfplumber
+
 
 # Configure page
 st.set_page_config(
@@ -52,15 +53,17 @@ def load_models():
         st.error("Model files not found. Please ensure you've saved your trained models.")
         return None, None, None
 
-def extract_text_from_pdf(pdf_file):
+def extract_form_fields_from_pdf(uploaded_file):
     """Extract text from uploaded PDF file"""
     try:
-        text = ""
-        with pdfplumber.open(BytesIO(pdf_file.read())) as pdf:
-            for page in pdf.pages:
-                text += page.extract_text() + "\n"
-        return text
-        return text
+        reader = PdfReader(uploaded_file)
+        fields = reader.get_fields()
+        if not fields:
+            return {}
+
+        extracted = {k: v["/V"] for k, v in fields.items() if isinstance(v, dict) and "/V" in v}
+        return extracted
+
     except Exception as e:
         st.error(f"Error extracting text from PDF: {str(e)}")
         return ""
@@ -68,8 +71,7 @@ def extract_text_from_pdf(pdf_file):
 def parse_dmv_report(text):
 
     """Parse DMV report text to extract key features"""
-    # This function should mirror your data extraction logic
-    # You'll need to adapt this based on your actual parsing logic
+    # This function mirrors the data extraction logic; adapt this based on your actual parsing logic
     
     data_point = {
         'vehicle_1_moving': 0,
@@ -257,7 +259,8 @@ def main():
         
         # Extract text
         with st.spinner("Extracting text from PDF..."):
-            extracted_text = extract_text_from_pdf(uploaded_file)
+            extracted_text = extract_form_fields_from_pdf(uploaded_file)
+            form_fields = extract_form_fields_from_pdf(uploaded_file)
         
         if extracted_text:
             # Show extracted text (first 500 characters)
