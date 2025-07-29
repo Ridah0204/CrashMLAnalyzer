@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.feature_extraction.text import TfidfVectorizer
 import re
-import PyPDF2
+import PyPDF2, pdfplumber
 from PyPDF2 import PdfReader
 from io import BytesIO
 import plotly.express as px
@@ -52,6 +52,26 @@ def load_models():
     except FileNotFoundError:
         st.error("Model files not found. Please ensure you've saved your trained models.")
         return None, None, None
+
+def extract_text_from_pdf(uploaded_file):
+    """Extracts text from the bottom portion of each page"""
+    try:
+        text = ""
+        with pdfplumber.open(BytesIO(uploaded_file.read())) as pdf:
+            for page in pdf.pages:
+                width, height = page.width, page.height
+                # Bottom 35% of the page where most narratives are
+                bbox = (0, height * 0.65, width, height)
+                region = page.within_bbox(bbox)
+                if region:
+                    region_text = region.extract_text()
+                    if region_text:
+                        text += region_text + "\n"
+        return text
+    except Exception as e:
+        st.error(f"Text extraction failed: {e}")
+        return ""
+
 
 def extract_form_fields_from_pdf(uploaded_file):
     """Extract text from uploaded PDF file"""
@@ -259,8 +279,8 @@ def main():
         
         # Extract text
         with st.spinner("Extracting text from PDF..."):
-            extracted_text = extract_form_fields_from_pdf(uploaded_file)
-            form_fields = extract_form_fields_from_pdf(uploaded_file)
+            extracted_text = extract_text_from_pdf(uploaded_file) #for natural language narrative
+            form_fields = extract_form_fields_from_pdf(uploaded_file) #for structured fields
         
         if extracted_text:
             # Show extracted text (first 500 characters)
@@ -269,7 +289,7 @@ def main():
             
             # Parse the report
             with st.spinner("Parsing report data..."):
-                parsed_data = parse_dmv_report(extracted_text)
+                parsed_data = parse_dmv_report(extracted_text, form_fields)
             
             # Make prediction
             with st.spinner("Analyzing fault attribution..."):
