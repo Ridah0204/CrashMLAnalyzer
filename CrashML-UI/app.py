@@ -224,6 +224,14 @@ def explain_prediction(data_point, models, feature_names, all_features):
     
     return explanations
 
+if 'last_uploaded_file_bytes' in st.session_state:
+    del st.session_state['last_uploaded_file_bytes']
+
+if st.sidebar.button("🔄 Clear Session Cache"):
+    st.session_state.clear()
+    st.rerun()
+
+
 # Main App
 def main():
     st.markdown('<h1 class="main-header">🚗 CrashML: AV Accident Fault Analyzer</h1>', unsafe_allow_html=True)
@@ -271,8 +279,10 @@ def main():
         st.caption(f"Currently analyzing: `{uploaded_file.name}`")
 
         # Check if this is a new file
-        if 'last_uploaded_file' not in st.session_state or st.session_state.last_uploaded_file != uploaded_file.name:
-            st.session_state.last_uploaded_file = uploaded_file.name
+        file_bytes = uploaded_file.getvalue()  # read content
+
+        if 'last_uploaded_file_bytes' not in st.session_state or st.session_state.last_uploaded_file_bytes != file_bytes:
+            st.session_state.last_uploaded_file_bytes = file_bytes
             st.rerun()
 
         st.success("✅ File uploaded successfully!")
