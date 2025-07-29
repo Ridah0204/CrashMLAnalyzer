@@ -88,7 +88,7 @@ def extract_form_fields_from_pdf(uploaded_file):
         st.error(f"Error extracting text from PDF: {str(e)}")
         return ""
 
-def parse_dmv_report(text):
+def parse_dmv_report(text, form_fields):
 
     """Parse DMV report text to extract key features"""
     # This function mirrors the data extraction logic; adapt this based on your actual parsing logic
