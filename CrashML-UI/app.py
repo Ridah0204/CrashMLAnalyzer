@@ -11,7 +11,7 @@ from PyPDF2 import PdfReader
 from io import BytesIO
 import plotly.express as px
 import plotly.graph_objects as go
-
+import hashlib
 
 # Configure page
 st.set_page_config(
@@ -46,12 +46,10 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
-
 # Load pre-trained models and vectorizers
 @st.cache_resource
 def load_models():
     try:
-        # You'll need to save these from your Google Colab training
         models = pickle.load(open('crashml_models.pkl', 'rb'))
         vectorizer = pickle.load(open('tfidf_vectorizer.pkl', 'rb'))
         feature_names = pickle.load(open('feature_names.pkl', 'rb'))
@@ -60,11 +58,25 @@ def load_models():
         st.error("Model files not found. Please ensure you've saved your trained models.")
         return None, None, None
 
-def extract_text_from_pdf(uploaded_file):
-    """Extracts text from the bottom portion of each page"""
+def get_file_hash(uploaded_file):
+    """Generate a unique hash for the uploaded file"""
+    file_bytes = uploaded_file.getvalue()
+    return hashlib.md5(file_bytes).hexdigest()
+
+@st.cache_data
+def process_pdf(file_hash, file_content):
+    """Process PDF and cache results based on file hash"""
+    # Extract text
+    extracted_text = extract_text_from_pdf_bytes(file_content)
+    # Extract form fields
+    form_fields = extract_form_fields_from_pdf_bytes(file_content)
+    return extracted_text, form_fields
+
+def extract_text_from_pdf_bytes(file_bytes):
+    """Extracts text from PDF bytes"""
     try:
         text = ""
-        with pdfplumber.open(BytesIO(uploaded_file.read())) as pdf:
+        with pdfplumber.open(BytesIO(file_bytes)) as pdf:
             for page in pdf.pages:
                 width, height = page.width, page.height
                 # Bottom 35% of the page where most narratives are
@@ -79,27 +91,22 @@ def extract_text_from_pdf(uploaded_file):
         st.error(f"Text extraction failed: {e}")
         return ""
 
-
-def extract_form_fields_from_pdf(uploaded_file):
-    """Extract text from uploaded PDF file"""
+def extract_form_fields_from_pdf_bytes(file_bytes):
+    """Extract form fields from PDF bytes"""
     try:
-        reader = PdfReader(uploaded_file)
+        reader = PdfReader(BytesIO(file_bytes))
         fields = reader.get_fields()
         if not fields:
             return {}
-
+        
         extracted = {k: v["/V"] for k, v in fields.items() if isinstance(v, dict) and "/V" in v}
         return extracted
-
     except Exception as e:
-        st.error(f"Error extracting text from PDF: {str(e)}")
-        return ""
+        st.error(f"Error extracting form fields: {str(e)}")
+        return {}
 
 def parse_dmv_report(text, form_fields):
-
     """Parse DMV report text to extract key features"""
-    # This function mirrors the data extraction logic; adapt this based on your actual parsing logic
-    
     data_point = {
         'vehicle_1_moving': 0,
         'vehicle_2_moving': 0,
@@ -117,9 +124,12 @@ def parse_dmv_report(text, form_fields):
     if any(keyword in text.lower() for keyword in ['autonomous', 'autopilot', 'self-driving']):
         data_point['autonomous_mode'] = 1
     
-    # Extract vehicle movement
-    if any(keyword in text.lower() for keyword in ['moving', 'traveling', 'driving']):
+    # Extract vehicle movement - check form fields first
+    if 'Moving' in form_fields or any(keyword in text.lower() for keyword in ['moving', 'traveling', 'driving']):
         data_point['vehicle_1_moving'] = 1
+    
+    if 'Stopped in Traffic' in form_fields:
+        data_point['vehicle_1_moving'] = 0
     
     # Extract impact points
     if any(keyword in text.lower() for keyword in ['rear end', 'rear-end', 'rear impact']):
@@ -143,7 +153,6 @@ def parse_dmv_report(text, form_fields):
     
     return data_point
 
-#reverted back to original function
 def predict_fault(data_point, models, vectorizer, feature_names):
     """Make prediction using the trained models"""
     
@@ -172,14 +181,13 @@ def predict_fault(data_point, models, vectorizer, feature_names):
         # Pad with zeros
         padded_text_features = np.pad(text_features_array, (0, expected_text_features - actual_text_features))
     elif actual_text_features > expected_text_features:
-    # Truncate if longer (shouldn't happen)
+        # Truncate if longer (shouldn't happen)
         padded_text_features = text_features_array[:expected_text_features]
     else:
         padded_text_features = text_features_array
 
     # Combine all features
     all_features = np.concatenate([structured_features, padded_text_features]).reshape(1, -1)
-
     
     # Make predictions with all models
     predictions = {}
@@ -215,8 +223,8 @@ def explain_prediction(data_point, models, feature_names, all_features):
     if data_point['road_issue'] == 1:
         explanations.append("⚠ Adverse road conditions present")
     
-    # Feature importance from best model (you can customize this)
-    best_model = models['Gradient Boosting']  # Assuming this was your best model
+    # Feature importance from best model
+    best_model = models['Gradient Boosting']
     if hasattr(best_model, 'feature_importances_'):
         importances = best_model.feature_importances_
         top_features = np.argsort(importances)[-5:][::-1]
@@ -230,7 +238,6 @@ def explain_prediction(data_point, models, feature_names, all_features):
                 explanations.append(f"{i+1}. {feature_name}: {feature_value:.3f} (importance: {importance:.3f})")
     
     return explanations
-
 
 # Main App
 def main():
@@ -275,37 +282,57 @@ def main():
     )
     
     if uploaded_file is not None:
-            # Display file name as feedback
+        # Display file name as feedback
         st.caption(f"Currently analyzing: `{uploaded_file.name}`")
-
-        # Check if this is a new file
-        file_bytes = uploaded_file.getvalue()  # read content
-
-        if 'last_uploaded_file_bytes' not in st.session_state or st.session_state.last_uploaded_file_bytes != file_bytes:
-            st.session_state.last_uploaded_file_bytes = file_bytes
-            st.rerun()
-
-        st.success("✅ File uploaded successfully!")
         
-        # Extract text
-        with st.spinner("Extracting text from PDF..."):
-            extracted_text = extract_text_from_pdf(uploaded_file) #for natural language narrative
-            form_fields = extract_form_fields_from_pdf(uploaded_file) #for structured fields
+        # Generate unique hash for this file
+        current_file_hash = get_file_hash(uploaded_file)
         
-        if extracted_text:
-            # Show extracted text (first 500 characters)
-            with st.expander("📄 Extracted Text Preview"):
-                st.text_area("Text Preview", extracted_text[:500] + "...", height=200)
+        # Check if we've processed this exact file before
+        if 'processed_files' not in st.session_state:
+            st.session_state.processed_files = {}
+        
+        # Only process if it's a new file or file has changed
+        if current_file_hash not in st.session_state.processed_files:
+            st.success("✅ File uploaded successfully!")
             
-            # Parse the report
-            with st.spinner("Parsing report data..."):
-                parsed_data = parse_dmv_report(extracted_text, form_fields)
+            # Get file content for processing
+            file_content = uploaded_file.getvalue()
             
-            # Make prediction
-            with st.spinner("Analyzing fault attribution..."):
-                predictions, probabilities, all_features = predict_fault(
-                    parsed_data, models, vectorizer, feature_names)
+            # Extract text and form fields
+            with st.spinner("Extracting text from PDF..."):
+                extracted_text, form_fields = process_pdf(current_file_hash, file_content)
+            
+            if extracted_text:
+                # Show extracted text (first 500 characters)
+                with st.expander("📄 Extracted Text Preview"):
+                    st.text_area("Text Preview", extracted_text[:500] + "..." if len(extracted_text) > 500 else extracted_text, height=200)
                 
+                # Parse the report
+                with st.spinner("Parsing report data..."):
+                    parsed_data = parse_dmv_report(extracted_text, form_fields)
+                
+                # Make prediction
+                with st.spinner("Analyzing fault attribution..."):
+                    predictions, probabilities, all_features = predict_fault(
+                        parsed_data, models, vectorizer, feature_names
+                    )
+                
+                # Store results in session state
+                st.session_state.processed_files[current_file_hash] = {
+                    'filename': uploaded_file.name,
+                    'extracted_text': extracted_text,
+                    'parsed_data': parsed_data,
+                    'predictions': predictions,
+                    'probabilities': probabilities,
+                    'all_features': all_features
+                }
+        else:
+            st.success("✅ File already processed!")
+        
+        # Get results (either newly processed or from cache)
+        if current_file_hash in st.session_state.processed_files:
+            results = st.session_state.processed_files[current_file_hash]
             
             # Display results
             st.header("🎯 Fault Analysis Results")
@@ -317,21 +344,21 @@ def main():
                 fault_labels = {0: "Not at Fault", 1: "Partially at Fault", 2: "Fully at Fault"}
                 fault_colors = {0: "#28a745", 1: "#ffc107", 2: "#dc3545"}
                 
-                for model_name, prediction in predictions.items():
+                for model_name, prediction in results['predictions'].items():
                     fault_label = fault_labels[prediction]
                     color = fault_colors[prediction]
                     
                     st.markdown(f"""
                     <div class="fault-card" style="background-color: {color}20; border-left: 5px solid {color};">
                         <h4>{model_name}: {fault_label}</h4>
-                        <p>Confidence: {probabilities[model_name][prediction]:.1%}</p>
+                        <p>Confidence: {results['probabilities'][model_name][prediction]:.1%}</p>
                     </div>
                     """, unsafe_allow_html=True)
             
             with col2:
                 # Probability visualization
-                best_model = "Gradient Boosting"  # You can make this dynamic
-                prob_data = probabilities[best_model]
+                best_model = "Gradient Boosting"
+                prob_data = results['probabilities'][best_model]
                 
                 fig = go.Figure(data=[
                     go.Bar(
@@ -349,13 +376,14 @@ def main():
             
             # Explanation
             st.header("🔍 Analysis Explanation")
-            explanations = explain_prediction(parsed_data, models, feature_names, all_features)
+            explanations = explain_prediction(results['parsed_data'], models, feature_names, results['all_features'])
             
             for explanation in explanations:
                 st.write(explanation)
             
             # Feature summary
             st.header("📋 Extracted Features Summary")
+            parsed_data = results['parsed_data']
             feature_summary = pd.DataFrame([
                 ["Vehicle 1 Moving", "Yes" if parsed_data['vehicle_1_moving'] else "No"],
                 ["Vehicle 2 Moving", "Yes" if parsed_data['vehicle_2_moving'] else "No"],
@@ -367,6 +395,15 @@ def main():
             ], columns=["Feature", "Value"])
             
             st.table(feature_summary)
+            
+            # Show processed files in sidebar
+            with st.sidebar:
+                st.header("📁 Processed Files")
+                for file_hash, file_data in st.session_state.processed_files.items():
+                    if file_hash == current_file_hash:
+                        st.write(f"🔄 **{file_data['filename']}** (current)")
+                    else:
+                        st.write(f"✅ {file_data['filename']}")
     
     # Footer
     st.markdown("---")
