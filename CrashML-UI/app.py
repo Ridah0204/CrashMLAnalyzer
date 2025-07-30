@@ -40,6 +40,13 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Optional manual reset for dev/testing
+with st.sidebar:
+    if st.button("🔄 Clear Session Cache"):
+        st.session_state.clear()
+        st.rerun()
+
+
 # Load pre-trained models and vectorizers
 @st.cache_resource
 def load_models():
