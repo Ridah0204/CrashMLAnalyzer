@@ -224,13 +224,6 @@ def explain_prediction(data_point, models, feature_names, all_features):
     
     return explanations
 
-if 'last_uploaded_file_bytes' in st.session_state:
-    del st.session_state['last_uploaded_file_bytes']
-
-if st.sidebar.button("🔄 Clear Session Cache"):
-    st.session_state.clear()
-    st.rerun()
-
 
 # Main App
 def main():
