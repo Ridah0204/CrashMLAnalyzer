@@ -63,31 +63,59 @@ def get_file_hash(uploaded_file):
     file_bytes = uploaded_file.getvalue()
     return hashlib.md5(file_bytes).hexdigest()
 
-@st.cache_data
+def extract_text_from_pdf_bytes(file_bytes):
+    """Enhanced text extraction with better coverage"""
+    try:
+        text = ""
+        
+        # Method 1: Extract all text (not just bottom 35%)
+        with pdfplumber.open(BytesIO(file_bytes)) as pdf:
+            for page_num, page in enumerate(pdf.pages):
+                page_text = page.extract_text()
+                if page_text:
+                    text += f"--- Page {page_num + 1} ---\n{page_text}\n"
+        
+        # Method 2: Also try to extract checkbox states
+        try:
+            reader = PdfReader(BytesIO(file_bytes))
+            for page in reader.pages:
+                # Try to extract annotations/form data
+                if '/Annots' in page:
+                    annotations = page['/Annots']
+                    for annotation in annotations:
+                        annot_obj = annotation.get_object()
+                        if '/AS' in annot_obj:  # Appearance state (for checkboxes)
+                            text += f" CHECKBOX_STATE: {annot_obj['/AS']} "
+        except Exception as e:
+            st.write(f"Note: Could not extract checkbox states: {str(e)}")
+        
+        return text
+        
+    except Exception as e:
+        st.error(f"Enhanced text extraction failed: {e}")
+        return ""
+
+def extract_form_fields_from_pdf_bytes(file_bytes):
+    """Extract form fields from PDF bytes"""
+    try:
+        reader = PdfReader(BytesIO(file_bytes))
+        fields = reader.get_fields()
+        if not fields:
+            return {}
+        
+        extracted = {k: v["/V"] for k, v in fields.items() if isinstance(v, dict) and "/V" in v}
+        return extracted
+    except Exception as e:
+        st.write(f"Note: Could not extract form fields: {str(e)}")
+        return {}
+
 def process_pdf(file_hash, file_content):
     """Process PDF and cache results based on file hash"""
     # Extract text and form fields
     extracted_text = extract_text_from_pdf_bytes(file_content)
-    return extracted_text
+    form_fields = extract_form_fields_from_pdf_bytes(file_content)
+    return extracted_text, form_fields
 
-
-    """Extracts text from PDF bytes"""
-    try:
-        text = ""
-        with pdfplumber.open(BytesIO(file_bytes)) as pdf:
-            for page in pdf.pages:
-                width, height = page.width, page.height
-                # Bottom 35% of the page where most narratives are
-                bbox = (0, height * 0.65, width, height)
-                region = page.within_bbox(bbox)
-                if region:
-                    region_text = region.extract_text()
-                    if region_text:
-                        text += region_text + "\n"
-        return text
-    except Exception as e:
-        st.error(f"Text extraction failed: {e}")
-        return ""
 def parse_dmv_report(text, form_fields):
     """Enhanced DMV report parser to extract key features with better differentiation"""
     
@@ -296,98 +324,6 @@ def parse_dmv_report(text, form_fields):
     
     return data_point
 
-def extract_text_from_pdf_bytes(file_bytes):
-    """Enhanced text extraction with better coverage"""
-    try:
-        text = ""
-        
-        # Method 1: Extract all text (not just bottom 35%)
-        with pdfplumber.open(BytesIO(file_bytes)) as pdf:
-            for page_num, page in enumerate(pdf.pages):
-                page_text = page.extract_text()
-                if page_text:
-                    text += f"--- Page {page_num + 1} ---\n{page_text}\n"
-        
-        # Method 2: Also try to extract checkbox states
-        try:
-            reader = PdfReader(BytesIO(file_bytes))
-            for page in reader.pages:
-                # Try to extract annotations/form data
-                if '/Annots' in page:
-                    annotations = page['/Annots']
-                    for annotation in annotations:
-                        annot_obj = annotation.get_object()
-                        if '/AS' in annot_obj:  # Appearance state (for checkboxes)
-                            text += f" CHECKBOX_STATE: {annot_obj['/AS']} "
-        except Exception as e:
-            st.write(f"Note: Could not extract checkbox states: {str(e)}")
-        
-        return text
-        
-    except Exception as e:
-        st.error(f"Enhanced text extraction failed: {e}")
-        return ""
-    """Extract form fields from PDF bytes"""
-    try:
-        reader = PdfReader(BytesIO(file_bytes))
-        fields = reader.get_fields()
-        if not fields:
-            return {}
-        
-        extracted = {k: v["/V"] for k, v in fields.items() if isinstance(v, dict) and "/V" in v}
-        return extracted
-    except Exception as e:
-        st.error(f"Error extracting form fields: {str(e)}")
-        return {}
-
-
-    """Parse DMV report text to extract key features"""
-    data_point = {
-        'vehicle_1_moving': 0,
-        'vehicle_2_moving': 0,
-        'autonomous_mode': 0,
-        'impact_front': 0,
-        'impact_rear': 0,
-        'impact_side': 0,
-        'weather_issue': 0,
-        'road_issue': 0,
-        'dark_condition': 0,
-        'description': text
-    }
-    
-    # Extract autonomous mode
-    if any(keyword in text.lower() for keyword in ['autonomous', 'autopilot', 'self-driving']):
-        data_point['autonomous_mode'] = 1
-    
-    # Extract vehicle movement - check form fields first
-    if 'Moving' in form_fields or any(keyword in text.lower() for keyword in ['moving', 'traveling', 'driving']):
-        data_point['vehicle_1_moving'] = 1
-    
-    if 'Stopped in Traffic' in form_fields:
-        data_point['vehicle_1_moving'] = 0
-    
-    # Extract impact points
-    if any(keyword in text.lower() for keyword in ['rear end', 'rear-end', 'rear impact']):
-        data_point['impact_rear'] = 1
-    elif any(keyword in text.lower() for keyword in ['front end', 'front impact']):
-        data_point['impact_front'] = 1
-    elif any(keyword in text.lower() for keyword in ['side impact', 'side collision']):
-        data_point['impact_side'] = 1
-    
-    # Extract weather conditions
-    if any(keyword in text.lower() for keyword in ['rain', 'snow', 'fog', 'storm']):
-        data_point['weather_issue'] = 1
-    
-    # Extract road conditions
-    if any(keyword in text.lower() for keyword in ['wet', 'slippery', 'construction']):
-        data_point['road_issue'] = 1
-    
-    # Extract lighting conditions
-    if any(keyword in text.lower() for keyword in ['dark', 'night', 'dusk']):
-        data_point['dark_condition'] = 1
-    
-    return data_point
-
 def predict_fault(data_point, models, vectorizer, feature_names):
     """Make prediction using the trained models"""
     
@@ -534,9 +470,15 @@ def main():
             # Get file content for processing
             file_content = uploaded_file.getvalue()
             
-            # Extract text and form fields
+            # Extract text and form fields - direct extraction to avoid caching issues
             with st.spinner("Extracting text from PDF..."):
-                extracted_text, form_fields = process_pdf(current_file_hash, file_content)
+                try:
+                    extracted_text = extract_text_from_pdf_bytes(file_content)
+                    form_fields = extract_form_fields_from_pdf_bytes(file_content)
+                except Exception as e:
+                    st.error(f"Error processing PDF: {str(e)}")
+                    extracted_text = ""
+                    form_fields = {}
             
             if extracted_text:
                 # Show extracted text (first 500 characters)
@@ -562,6 +504,8 @@ def main():
                     'probabilities': probabilities,
                     'all_features': all_features
                 }
+            else:
+                st.error("❌ No text extracted from the PDF. Please check the file format.")
         else:
             st.success("✅ File already processed!")
         
