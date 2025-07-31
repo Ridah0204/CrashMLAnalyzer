@@ -119,6 +119,8 @@ def process_pdf(file_hash, file_content):
 def parse_dmv_report(text, form_fields):
     """Enhanced DMV report parser to extract key features with better differentiation"""
     
+    st.error("🔧 USING ENHANCED PARSER - This message confirms the new parser is running!")
+
     # Initialize data point
     data_point = {
         'vehicle_1_moving': 0,
